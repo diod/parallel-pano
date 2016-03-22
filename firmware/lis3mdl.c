@@ -42,7 +42,7 @@ void compass_init(uint8_t addr) {
   compass_setRange(RANGE_4);
 
   twi_write_byte(addr, CTRL_REG3, 0);
-  twi_write_byte(addr, CTRL_REG1, 0x30);
+  twi_write_byte(addr, CTRL_REG1, 0x1C);
   
 }
 
@@ -127,7 +127,6 @@ void compass_readXYZ_Calib() {
 
 float compass_readYaw()
 {
-    compass_readXYZ_Calib();
     float heading = atan2(_compass_y_cal, _compass_x_cal);
 
     if(heading < 0)
@@ -136,7 +135,7 @@ float compass_readYaw()
     if(heading > 2*M_PI)
     heading -= 2*M_PI;
 
-    float headingDegrees = heading * 180/M_PI * 100;
+    float headingDegrees = heading * 180/M_PI * 10;
 
     return headingDegrees;
 }

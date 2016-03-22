@@ -1031,7 +1031,7 @@ int main(void)
   gyro_init(TWI_SLA_L3G4200D);
   printf("%s", "gyro()\n");  
 
-  uint16_t cpf = 10;
+  uint16_t cpf = 11;
 
   int32_t gtx = 0;
   int32_t gty = 0;
@@ -1040,7 +1040,7 @@ int main(void)
   int32_t cx=0;
   int32_t cy=0;
   int32_t cz=0;
-  int32_t yaw = 0;
+//  int32_t yaw = 0;
 
   int32_t gx=0;
   int32_t gy=0;
@@ -1051,19 +1051,18 @@ int main(void)
     cx=0;
     cy=0;
     cz=0;
-    yaw = 0;
+//    yaw = 0;
 
     gx=0;
     gy=0;
     gz=0;
     
     for (a=0;a<cpf;a++) {
-      yaw += round(compass_readYaw());
+      compass_readXYZ_Calib();
 
       cx += round(_compass_x_cal);
       cy += round(_compass_y_cal);
       cz += round(_compass_z_cal);
-
 
       uint8_t status;
       twi_read_byte(_gyro_addr, GYRO_STATUS_REG, &status);
@@ -1076,9 +1075,9 @@ int main(void)
       int16_t _z=gyro_readAxis(GYRO_OUT_Z);
 //      printf("gyro:    raw: %5d %5d %5d\n", _x,_y,_z);
 
-      if (_x<100 && _x>-100) _x=0;
-      if (_y<100 && _y>-100) _y=0;
-      if (_z<100 && _z>-100) _z=0;
+      if (_x<80 && _x>-80) _x=0;
+      if (_y<80 && _y>-80) _y=0;
+      if (_z<80 && _z>-80) _z=0;
 
       gx += _x;
       gy += _y;
@@ -1091,13 +1090,13 @@ int main(void)
     }
 
     
-    printf("compass: cal: %6ld %6ld %6ld | yaw: %3d\n",cx/cpf,cy/cpf,cz/cpf,yaw/cpf);
+    printf("compass: cal: %ld %ld %ld\n",cx/cpf,cy/cpf,cz/cpf);
 
     gtx+=gx/cpf;
     gty+=gy/cpf;
     gtz+=gz/cpf;
 
-    printf("gyro:    raw: %6ld %6ld %6ld | sum: %6ld %6ld %6ld\n", gx/cpf,gy/cpf,gz/cpf, gtx/114,gty/114,gtz/114);
+    printf("gyro: raw: %ld %ld %ld | sum: %ld %ld %ld\n", gx/cpf,gy/cpf,gz/cpf, gtx,gty,gtz);
     
     _delay_ms(9);
   }
