@@ -1031,7 +1031,7 @@ int main(void)
   gyro_init(TWI_SLA_L3G4200D);
   printf("%s", "gyro()\n");  
 
-  uint16_t cpf = 11;
+  uint16_t cpf = 19;
 
   int32_t gtx = 0;
   int32_t gty = 0;

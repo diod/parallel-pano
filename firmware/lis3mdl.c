@@ -93,6 +93,14 @@ int16_t compass_readAxis(uint8_t reg)
 float _compass_x_cal, _compass_y_cal, _compass_z_cal;
 
 void compass_readXYZ_Calib() {
+
+    _compass_x_cal = compass_readAxis(OUT_X);
+    _compass_y_cal = compass_readAxis(OUT_Y);
+    _compass_z_cal = compass_readAxis(OUT_Z);
+
+    return;
+
+
     float calibration_matrix[3][3] = 
     {
         {2.446, 0.074, 0.006},
