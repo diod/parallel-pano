@@ -21,42 +21,48 @@ using namespace std;
 using namespace cv;
 
 
+const int frame_width = 1280;
+const int frame_height = 720;
+
+
 static void *compass_main(void *p);
 volatile int compass_value;
 
  
 int main(int argc, char *argv[]) {
 
-  if (argc==1) {
+  if (argc<3) {
+    printf("Usage: %s <pano.png> <video.avi>\n\n", argv[0]);
     printf("Need pano image file name\n");
     return -1;
   }  
 
-/*
-  cv::VideoCapture cap(argv[1]);
-  if ( !cap.isOpened() )  // if not success, exit program
-    {
-       printf("Cannot open the video file\n");
-       return -1;
-    }
-*/
-
-  const int frame_width = 1280;
-  const int frame_height = 720;
-
-  cv::namedWindow("Pano", CV_WINDOW_NORMAL);
-  cv::resizeWindow("Pano", frame_width,frame_height);
-  cv::moveWindow("Pano",0,-20);
-
+  /* read pano */
   Mat pano = imread(argv[1]);
   if (!pano.data) {
     printf("Error loading pano image from: %s\n", argv[1]);
     return -1;
   }
-  
   double scale = (double)frame_height/pano.rows;
   int src_width = round((double)frame_width/scale);
   printf("Pano: %d x %d, downscale: %0.2lf, sec_width=%d\n", pano.cols, pano.rows, scale,src_width);
+
+  /* open video */
+  cv::VideoCapture cap(argv[2]);
+  if ( !cap.isOpened() )  // if not success, exit program
+    {
+       printf("Cannot open the video file: %s\n",argv[2]);
+       return -1;
+    }
+
+
+  cv::namedWindow("Pano", CV_WINDOW_FULLSCREEN);
+  cv::resizeWindow("Pano", 1920,1080);
+  waitKey(1);
+  cv::moveWindow("Pano",-1,-5);
+  waitKey(1);
+
+  
 
   //init thread
   pthread_attr_t threadAttr;
@@ -71,12 +77,39 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
+  //prepare blend mask;
+  int dcols = 368+8;
+  int drows = 505+16;
+
+  Mat blend(drows,dcols,CV_8U,Scalar::all(0));
+  for(int bly=10;bly<drows;bly++) {
+    for(int blx=8;blx<dcols-8;blx++) {
+      char d=255;
+      int edge_dist = min(blx+5,bly-10);
+      edge_dist = min(edge_dist, drows-bly-22);
+      edge_dist = min(edge_dist, dcols-blx-8);
+
+      if (edge_dist < 15) {
+        d = saturate_cast<uchar>( 255.0/15.0*(float)edge_dist);
+      }
+      
+      blend.at<uchar>(bly,blx) = d;
+    }
+  } 
+
+//  cv::namedWindow("Blend", CV_WINDOW_NORMAL);
+//  imshow("Blend", blend);
+//  waitKey(1);
+
   int x = 0;
-  int basex = 0;
+  double baseang = 82;
   int prev_x = -1;
   cv::Mat res;
 
   while (1) {
+    float angle = (float)compass_value/10+baseang;
+    if (angle<0)	angle+=360;
+    if (angle>=360) 	angle-=360;
   
     if (prev_x != x) {
 
@@ -101,8 +134,104 @@ int main(int argc, char *argv[]) {
         pano(rectB).copyTo(mx(tgtB));
 
         resize(mx, res, Size(frame_width, frame_height));
-      }      
+      }
+      prev_x = x;
+    }      
 
+    printf("init_stage\n");
+    Mat stage(res.rows, res.cols, CV_8UC3);
+    res.copyTo(stage);
+    
+
+    //video
+    printf("read_video_frame\n");
+    Mat frame;
+    cap.read(frame);
+    if (!cap.read(frame)) {
+        cap.set(CV_CAP_PROP_POS_FRAMES,10);
+        if (!cap.read(frame)) {
+          printf("video: could not read frame\n");
+        } 
+    }
+
+    if (frame.data && (abs(angle-128.0) < 1.2)) {
+        printf("in_video\n");
+        detail::CylindricalWarper w(700*0.815);
+
+        int dcols = 368+8;
+        int drows = 505+16;
+
+        int dl = 8;
+        int dt = 10;
+        
+        int vx = 2270 + (frame_width-dcols)/2; //in global pano
+        int vy = (frame_height-drows)/2+3;
+        
+        int locx = (vx-x-frame_width/2)*scale+frame_width/2;
+        
+        //map to screen
+        if ((locx > 0) && (locx < frame_width)) {
+
+
+          double alpha=1.42;
+          char beta = 6;
+/*
+          for(int imy=0; imy<frame.rows; imy++) {
+            for(int imx=0;imx<frame.cols; imx++) {
+              for(int imc=0; imc<3; imc++) {
+                frame.at<Vec3b>(imy,imx)[imc] =
+                  saturate_cast<uchar>( alpha*( frame.at<Vec3b>(imy,imx)[imc] ) -beta ); }
+            }
+          }
+*/
+
+          cv::Mat dst;
+  
+//          float centerx = (float)frame.cols/2.0 - (vx-x-frame_width/2)/0.815; //if in center
+          float centerx = frame.cols/2.0; //-(locx-frame_width/2)/5.0;
+          
+          printf("x: %d vx:%d centerx: %0.3f\n",x,vx,centerx);
+          Mat K = (Mat_<float>(3,3) << 700,0, centerx, 0,700,(float)frame.rows/2.0-150, 0,0,1);
+          Mat R = (Mat_<float>(3,3) << 1,0,0,       0,1,0,       0,0,1.0);
+
+          w.warp(frame, K, R, INTER_NEAREST, BORDER_CONSTANT, dst);
+          
+          dcols = dst.cols;
+          drows = dst.rows;
+          int dw = dcols-dl;
+          int dh = drows-2*dt;
+
+          Rect stgt( dl, dt, dw, dh);      
+          
+          printf("dst: %d x %d\n", dst.cols, dst.rows);
+
+          Rect vtgt( locx, vy, dw, dh);
+          printf("video rect: %d %d %d %d\n\n", (frame_width-dst.cols)/2, (frame_height-dst.rows)/2+1, dw, dh);
+/*
+//          dst(stgt).copyTo(res(vtgt));
+*/
+          
+          for(int imy=0;imy<dh;imy++) {
+            for(int imx=0;imx<dw;imx++) {
+              int tx = imx + locx;
+              int ty = imy + vy;
+              int sx = imx + dl;
+              int sy = imy + dt;
+              
+              for(int imc=0;imc<3;imc++) {
+                uchar _tmp = saturate_cast<uchar>( alpha*( dst.at<Vec3b>(sy,sx)[imc] -beta )); 
+                
+                stage.at<Vec3b>(ty,tx)[imc] = ((int)blend.at<uchar>(imy,imx)*(int)_tmp + (int)(255-blend.at<uchar>(imy,imx)) * res.at<Vec3b>(ty,tx)[imc])/255.0;
+              }
+            }
+          }
+          
+          
+
+        }
+      }
+
+      
 
 /*
       detail::CylindricalWarper w(700);
@@ -115,22 +244,27 @@ int main(int argc, char *argv[]) {
 
       imshow("Pano", dst);        
 */
-      imshow("Pano", res);        
 
-      prev_x = x;
-    }
+    Mat output;
+    cv::Rect myRect(x,0,frame_width, frame_height);
+    resize(stage, output, Size(1920, 1080));
+
+
+    imshow("Pano", output);        
+//    cv::resizeWindow("Pano", 1920,1080);
+//    cv::moveWindow("Pano",-1,-5);
+
 //      imshow("Pano", res);
     
-    float angle = (float)compass_value/10;
-    x = (float)pano.cols*angle/360+basex;
+    x = (float)pano.cols*(angle)/360;
 
-    printf("\t\t\t\t\t\t\tx: %d, angle: %0.2f,basex=%d, prevx=%d\r",x,angle,basex,prev_x);    
+    printf("\t\t\t\t\t\t\tx: %d, angle: %0.2f baseang: %6.1f, prevx: %d\r",x,angle,baseang,prev_x);    
 
     char k = (char)cv::waitKey(10);
 
     if (k==27) break;
-    if (k=='q') basex-=50;
-    if (k=='w') basex+=50;
+    if (k=='q') baseang-=2.0;
+    if (k=='w') baseang+=2.0;
 
   }
   return 0;
@@ -140,7 +274,7 @@ int main(int argc, char *argv[]) {
 static void *compass_main(void *p) {
   printf("Compass thread start\n");
   
-  int fd = open("/dev/ttyUSB0", O_RDWR);
+  int fd = open("/dev/ttyUSB1", O_RDWR);
   if (!fd) {
     printf("compass: could not open device\n");
   }     
@@ -212,7 +346,14 @@ static void *compass_main(void *p) {
           continue; //ignore
         }
 
-        double heading = atan2(cy,cx);
+        //unbias
+        //cx 2550+4100 = 2740
+        cx-=3335;
+        //cy -2780 -1000 = 
+        cy+=2205;
+
+
+        double heading = atan2((float)cy/1.11,(float)cx/1.57);
         if (heading<0) 		heading+=2*M_PI;
         if (heading>2*M_PI)	heading-=2*M_PI;
 

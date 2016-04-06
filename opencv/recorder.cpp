@@ -27,8 +27,8 @@ int main(int argc, char *argv[]) {
   cv::VideoWriter video(filename, CV_FOURCC('M','J','P','G'),25,cv::Size(frame_width, frame_height),true);
   printf("Recorder: %dx%d\n",frame_width, frame_height);
 
-  cv::Point2f src_center(frame_width/2.0F, frame_height/2.0F);
-  cv::Mat rot_mat = cv::getRotationMatrix2D(src_center, 90, 1.0);
+//  cv::Point2f src_center(frame_width/2.0F, frame_height/2.0F);
+//  cv::Mat rot_mat = cv::getRotationMatrix2D(src_center, 90, 1.0);
 
   cv::Mat rot;
   
